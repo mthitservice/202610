@@ -24,6 +24,36 @@
 ## Voraussetzung
 
 - HTML5 Browser
+- Power Apps Entwickler Plan
+https://www.microsoft.com/de-de/power-platform/products/power-apps/free
+
+https://admin.powerplatform.microsoft.com/
+
+## Gruppe anlegen
+
+https://admin.cloud.microsoft/?#/homepage
+
+Name der Gruppe : AgentCreator
+
+- Mitglieder zuordnen
+- Nächster Schritt Berechtigung zuweisen
+admin.powerplatform.com
+- In Mandanteneinstellung  die Rolle "Copilot Studio Authors" ausgewählt
+- "Copilot Studio-Autoren" -> AgentCreator zugeordnet
+
+## SharePoint Seite anlegen (privat)
+
+https://drk.sharepoint.com/
+
+
+# Agent vorbereiten
+
+
+
+
+
+
+
 
 
 
