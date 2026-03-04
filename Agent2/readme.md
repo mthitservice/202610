@@ -47,7 +47,7 @@
 │  └── Verabschiedung                                          │
 │                                                              │
 └────────────────┬─────────────────────────────────────────────┘
-                 │ MCP Protocol (JSON-RPC / SSE)
+                 │ MCP Protocol (JSON-RPC / Streamable HTTP)
                  ▼
 ┌──────────────────────────────────────────────────────────────┐
 │              MCP Server (Node.js / TypeScript)                │
@@ -187,7 +187,7 @@ npm init -y
 2. Installieren Sie die Abhängigkeiten:
 
 ```bash
-npm install @modelcontextprotocol/sdk express dotenv node-fetch
+npm install @modelcontextprotocol/sdk express dotenv
 npm install -D typescript @types/node @types/express ts-node
 ```
 
@@ -228,14 +228,17 @@ Erstellen Sie die Datei `src/index.ts`:
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import express from "express";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express, { Request, Response } from "express";
 import { z } from "zod";
 import dotenv from "dotenv";
+import { randomUUID } from "crypto";
 
 dotenv.config();
 
 const app = express();
+app.use(express.json());
+
 const API_KEY = process.env.OPENWEATHER_API_KEY;
 const PORT = process.env.PORT || 3001;
 
@@ -263,12 +266,18 @@ async function fetchForecast(city: string): Promise<any> {
 
 const mcpServer = new McpServer({
   name: "weather-mcp-server",
-  version: "1.0.0",
+  version: "1.0.1",
   description: "MCP Server für Wetterdaten über OpenWeatherMap",
 });
 
+// Session-Management
+const transports = new Map<string, StreamableHTTPServerTransport>();
+
+// --- Tools registrieren ---
+
+function registerTools(server: McpServer) {
 // Tool 1: Aktuelles Wetter
-mcpServer.tool(
+server.tool(
   "get_current_weather",
   "Ruft das aktuelle Wetter für eine Stadt ab. Liefert Temperatur, Beschreibung, Luftfeuchtigkeit und Wind.",
   {
@@ -305,7 +314,7 @@ mcpServer.tool(
 );
 
 // Tool 2: 5-Tage-Vorhersage
-mcpServer.tool(
+server.tool(
   "get_weather_forecast",
   "Ruft die 5-Tage-Wettervorhersage für eine Stadt ab, gruppiert nach Tagen.",
   {
@@ -355,7 +364,7 @@ mcpServer.tool(
 );
 
 // Tool 3: Wetterwarnung (vereinfacht – basiert auf Extremwerten)
-mcpServer.tool(
+server.tool(
   "get_weather_alert",
   "Prüft das aktuelle Wetter und gibt Warnungen bei extremen Bedingungen aus (Hitze, Kälte, Sturm, etc.).",
   {
@@ -396,40 +405,82 @@ mcpServer.tool(
   }
 );
 
-// --- SSE Transport für Copilot Studio ---
+} // registerTools Ende
 
-let transport: SSEServerTransport | null = null;
+registerTools(mcpServer);
 
-app.get("/sse", async (req, res) => {
-  console.log("🔗 Neue SSE-Verbindung hergestellt");
-  transport = new SSEServerTransport("/messages", res);
-  await mcpServer.connect(transport);
+// --- Accept Header Middleware ---
+
+app.use("/mcp", (req: Request, res: Response, next) => {
+  if (!req.headers.accept) {
+    req.headers.accept = "application/json, text/event-stream";
+  }
+  next();
 });
 
-app.post("/messages", async (req, res) => {
-  if (transport) {
-    await transport.handlePostMessage(req, res);
+// --- Streamable HTTP Transport für Copilot Studio ---
+
+app.post("/mcp", async (req: Request, res: Response) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+  if (sessionId && transports.has(sessionId)) {
+    const transport = transports.get(sessionId)!;
+    await transport.handleRequest(req, res);
+    return;
+  }
+
+  const transport = new StreamableHTTPServerTransport({
+    sessionId: randomUUID(),
+  });
+
+  transports.set(transport.sessionId, transport);
+  console.log(`🔗 Neue MCP Session: ${transport.sessionId}`);
+
+  res.on("close", () => {
+    transports.delete(transport.sessionId);
+    console.log(`🔌 Session beendet: ${transport.sessionId}`);
+  });
+
+  await mcpServer.connect(transport);
+  await transport.handleRequest(req, res);
+});
+
+app.get("/mcp", async (req: Request, res: Response) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  if (sessionId && transports.has(sessionId)) {
+    const transport = transports.get(sessionId)!;
+    await transport.handleRequest(req, res);
   } else {
-    res.status(400).json({ error: "Keine aktive SSE-Verbindung" });
+    res.status(400).json({ error: "Keine aktive MCP Session" });
+  }
+});
+
+app.delete("/mcp", async (req: Request, res: Response) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  if (sessionId && transports.has(sessionId)) {
+    const transport = transports.get(sessionId)!;
+    await transport.handleRequest(req, res);
+    transports.delete(sessionId);
+  } else {
+    res.status(400).json({ error: "Keine aktive MCP Session" });
   }
 });
 
 // Health-Check Endpoint
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", server: "weather-mcp-server", version: "1.0.0" });
+  res.json({ status: "ok", server: "weather-mcp-server", version: "1.0.1" });
 });
 
 app.listen(PORT, () => {
   console.log(`🌤️  Wetter MCP Server läuft auf http://localhost:${PORT}`);
-  console.log(`📡 SSE Endpoint: http://localhost:${PORT}/sse`);
-  console.log(`💬 Messages Endpoint: http://localhost:${PORT}/messages`);
+  console.log(`📡 MCP Endpoint: http://localhost:${PORT}/mcp`);
   console.log(`❤️  Health Check: http://localhost:${PORT}/health`);
 });
 ```
 
 **Zeigen und erklären Sie dabei:**
-- Die drei `mcpServer.tool()`-Definitionen und deren Parameter-Schemas (Zod)
-- Den SSE-Transport als Verbindung zwischen Copilot Studio und dem Server
+- Die drei `server.tool()`-Definitionen in der `registerTools()`-Funktion und deren Parameter-Schemas (Zod)
+- Den Streamable HTTP Transport als Verbindung zwischen Copilot Studio und dem Server
 - Wie die OpenWeatherMap-API angesprochen wird
 
 📖 **Doku-Verweis:** [MCP TypeScript SDK – Server](https://github.com/modelcontextprotocol/typescript-sdk#server) | [MCP Tools Konzept](https://spec.modelcontextprotocol.io/specification/2025-03-26/server/tools/)
@@ -454,10 +505,10 @@ curl https://mthwaetherapp-mthcloud.msappproxy.net/health
 
 Erwartete Antwort:
 ```json
-{"status":"ok","server":"weather-mcp-server","version":"1.0.0"}
+{"status":"ok","server":"weather-mcp-server","version":"1.0.1"}
 ```
 
-3. **(Optional)** Testen Sie den SSE-Endpoint mit einem MCP-Client oder dem [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
+3. **(Optional)** Testen Sie den MCP-Endpoint mit einem MCP-Client oder dem [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
 
 ```bash
 npx @modelcontextprotocol/inspector
@@ -551,7 +602,7 @@ Copilot Studio benötigt eine öffentlich erreichbare URL. Für die Vorführung 
    | Eigenschaft | Wert |
    |---|---|
    | Servername | `Wetter MCP Server` |
-   | Server-URL (SSE) | `https://mthwaetherapp-mthcloud.msappproxy.net/sse` |
+   | Server-URL | `https://mthwaetherapp-mthcloud.msappproxy.net/mcp` |
 
 6. Klicken Sie auf **Verbinden** – Copilot Studio erkennt automatisch die verfügbaren Tools:
    - ✅ `get_current_weather`
@@ -603,10 +654,10 @@ Copilot Studio benötigt eine öffentlich erreichbare URL. Für die Vorführung 
 3. Fügen Sie einen **Frage-Knoten** hinzu:
    - Frage: `Für welche Stadt möchten Sie das Wetter wissen?`
    - Variable: `varStadt`
-4. Fügen Sie eine **Plugin-Aktion** hinzu → `get_current_weather` mit `city = varStadt`
-5. Antwort-Knoten mit den Ergebnissen
+4. Fügen Sie einen **Generative Antworten**-Knoten hinzu (**+** → **Erweitert** → **Generative Antworten**)
+   - Eingabe: `Wie ist das aktuelle Wetter in {Topic.varStadt}? Nutze das verfügbare Wetter-Tool.`
 
-> **Hinweis für die Vorführung:** Je nach Copilot Studio Version erkennt die **generative Orchestrierung** die Tools automatisch anhand der Beschreibung. In diesem Fall sind manuelle Topics optional – der Agent ruft die Tools selbstständig auf!
+> **Hinweis für die Vorführung:** Die MCP-Tools stehen **nicht** als einzelne Plugin-Aktionen zur Auswahl. Stattdessen nutzt man den **Generative Antworten**-Knoten – die KI-Engine erkennt automatisch, welches Tool aufgerufen werden muss. In vielen Fällen reicht die **generative Orchestrierung** sogar ohne manuelles Topic – der Agent ruft die Tools selbstständig auf!
 
 📖 **Doku-Verweis:** [Topics erstellen](https://learn.microsoft.com/de-de/microsoft-copilot-studio/authoring-create-edit-topics) | [Generative Orchestrierung](https://learn.microsoft.com/de-de/microsoft-copilot-studio/advanced-generative-actions)
 
@@ -664,16 +715,17 @@ Die vollständige Schritt-für-Schritt-Aufgabe für die Teilnehmer befindet sich
 
 | Aufgabe | Beschreibung |
 |---|---|
-| **1** | OpenWeatherMap API-Key erstellen |
-| **2** | MCP Server Projekt einrichten (Node.js) |
-| **3** | MCP Server implementieren (3 Weather-Tools) |
-| **4** | MCP Server lokal testen |
-| **5** | MCP Server per Dev Tunnel erreichbar machen |
-| **6** | Copilot Agent in Copilot Studio erstellen |
-| **7** | MCP Server als Aktion verbinden |
-| **8** | Topics und Begrüßung konfigurieren |
-| **9** | Agent veröffentlichen und testen |
-| **Bonus** | Adaptive Card für Wetteranzeige, Teams-Veröffentlichung |
+| **1** | Power Apps Entwicklungsumgebung erstellen |
+| **2** | Lösung erstellen |
+| **3** | Copilot Agent erstellen und konfigurieren |
+| **4** | MCP Server als Aktion verbinden |
+| **5** | Topics verwalten (Begrüßung & Verabschiedung) |
+| **6** | Topic: Wettervorhersage mit Stadtabfrage + Generative Antworten |
+| **7** | Topic: Wetterwarnungen mit Adaptive Card |
+| **8** | Topic: Wettervergleich zweier Städte |
+| **9** | Agent zur Lösung hinzufügen |
+| **10** | Agent veröffentlichen und testen |
+| **Bonus** | Erweiterte Adaptive Card, Teams-Veröffentlichung, Reiseplanungs-Topic |
 
 ---
 

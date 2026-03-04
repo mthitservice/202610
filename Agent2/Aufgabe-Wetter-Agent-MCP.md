@@ -40,7 +40,7 @@ In dieser Übung erstellen Sie einen **erweiterten Copilot Agent**, der über ei
 
 | Was | Wert |
 |---|---|
-| MCP Server URL (SSE) | `https://mthwaetherapp-mthcloud.msappproxy.net/sse` |
+| MCP Server URL | `https://mthwaetherapp-mthcloud.msappproxy.net/mcp` |
 
 ---
 
@@ -50,7 +50,7 @@ Das **Model Context Protocol (MCP)** ist ein offener Standard, der es KI-Agenten
 
 ```
 ┌─────────────────┐       MCP Protokoll       ┌─────────────────┐
-│  Copilot Studio │  ◄──── JSON-RPC/SSE ────►  │   MCP Server    │
+│  Copilot Studio │  ◄── Streamable HTTP ───►  │   MCP Server    │
 │  (euer Agent)   │                            │ (vom Trainer)   │
 └─────────────────┘                            └────────┬────────┘
                                                         │ HTTPS
@@ -170,10 +170,10 @@ Das **Model Context Protocol (MCP)** ist ein offener Standard, der es KI-Agenten
 
 Die **MCP Server URL** lautet:
 ```
-https://mthwaetherapp-mthcloud.msappproxy.net/sse
+https://mthwaetherapp-mthcloud.msappproxy.net/mcp
 ```
 
-> ⚠️ **Wichtig:** Die URL muss auf `/sse` enden!
+> ⚠️ **Wichtig:** Die URL muss auf `/mcp` enden!
 
 ### 4.2 MCP-Aktion hinzufügen
 
@@ -186,7 +186,7 @@ https://mthwaetherapp-mthcloud.msappproxy.net/sse
    | Eigenschaft | Wert |
    |---|---|
    | Servername | `Wetter MCP Server` |
-   | Server-URL | `https://mthwaetherapp-mthcloud.msappproxy.net/sse` |
+   | Server-URL | `https://mthwaetherapp-mthcloud.msappproxy.net/mcp` |
 
 6. Klicken Sie auf **Verbinden**
 
@@ -210,7 +210,7 @@ Nach der Verbindung erkennt Copilot Studio **automatisch** die verfügbaren Tool
 3. Der Agent sollte das Tool `get_current_weather` aufrufen und die aktuellen Wetterdaten anzeigen
 
 > **Troubleshooting:**
-> - Keine Verbindung? → Prüfen Sie, ob die URL korrekt ist (mit `/sse` am Ende)
+> - Keine Verbindung? → Prüfen Sie, ob die URL korrekt ist (mit `/mcp` am Ende)
 > - Timeout? → Fragen Sie den Trainer, ob der MCP Server läuft
 > - Keine Tools erkannt? → Versuchen Sie die Verbindung zu trennen und erneut herzustellen
 
@@ -303,32 +303,28 @@ Fügen Sie folgende **Trigger-Phrasen** hinzu:
    - **Identifizieren:** **Zahl** (Number)
    - **Speichern als Variable:** `varTage`
 
-### 6.5 Plugin-Aktion aufrufen
+### 6.5 Generative Antworten für den Tool-Aufruf nutzen
 
-1. Fügen Sie einen **Aktion aufrufen**-Knoten (Call an action) hinzu
-2. Wählen Sie die MCP-Aktion **`get_weather_forecast`**
-3. Ordnen Sie die Parameter zu:
-   - `city` → `varStadt`
-   - `days` → `varTage`
-4. Speichern Sie das Ergebnis in einer Variable: `varVorhersage`
+> **Wichtig:** Die MCP-Tools stehen in Copilot Studio **nicht** als einzelne Plugin-Aktionen zur Auswahl. Stattdessen nutzt Copilot Studio die **generative Orchestrierung** – der Agent erkennt automatisch anhand der Tool-Beschreibungen, welches MCP-Tool er aufrufen muss.
 
-### 6.6 Antwort formatieren
-
-1. Fügen Sie einen **Nachricht-Knoten** (Send a message) hinzu:
+1. Fügen Sie einen **Generative Antworten**-Knoten hinzu:
+   - Klicken Sie auf **+** → **Erweitert** → **Generative Antworten**
+2. Konfigurieren Sie die **Eingabe** (Input) des Knotens:
 
    ```
-   🌤️ Wettervorhersage für {varStadt}:
-   
-   {varVorhersage}
-   
-   Möchten Sie noch etwas wissen?
+   Erstelle eine Wettervorhersage für die Stadt {Topic.varStadt} 
+   für die nächsten {Topic.varTage} Tage. 
+   Nutze das verfügbare Wetter-Tool und formatiere die 
+   Antwort übersichtlich auf Deutsch.
    ```
 
-2. **Speichern** Sie das Topic
+3. **Speichern** Sie das Topic
 
-> **Ergebnis:** Sie haben ein Topic erstellt, das gezielt Stadt und Tage abfragt und die Vorhersage über den MCP Server abruft.
+> **Was passiert hier?** Der „Generative Antworten"-Knoten übergibt den Text an die KI-Engine. Diese erkennt anhand der Tool-Beschreibung automatisch, dass `get_weather_forecast` aufgerufen werden soll. Die Parameter `city` und `days` werden aus dem Kontext befüllt. Die Antwort wird direkt an den Benutzer ausgegeben – ein separater Nachricht-Knoten ist nicht nötig.
 
-📖 **Doku:** [Topics erstellen](https://learn.microsoft.com/de-de/microsoft-copilot-studio/authoring-create-edit-topics) | [Aktionen in Topics verwenden](https://learn.microsoft.com/de-de/microsoft-copilot-studio/advanced-plugin-actions)
+> **Ergebnis:** Sie haben ein Topic erstellt, das gezielt Stadt und Tage abfragt. Die generative Orchestrierung ruft automatisch das passende MCP-Tool auf und formatiert die Antwort.
+
+📖 **Doku:** [Topics erstellen](https://learn.microsoft.com/de-de/microsoft-copilot-studio/authoring-create-edit-topics) | [Generative Antworten](https://learn.microsoft.com/de-de/microsoft-copilot-studio/faqs-generative-answers)
 
 ---
 
@@ -353,18 +349,28 @@ In dieser Aufgabe erstellen Sie ein Topic, das Wetterwarnungen abfragt und das E
    - **Frage:** `Für welche Stadt möchten Sie Wetterwarnungen prüfen?`
    - **Speichern als Variable:** `varWarnStadt`
 
-### 7.3 Wetterwarnungs-Tool aufrufen
+### 7.3 Generative Antworten für Wetterwarnungen nutzen
 
-1. Fügen Sie einen **Aktion aufrufen**-Knoten hinzu
-2. Wählen Sie **`get_weather_alert`**
-3. Ordnen Sie zu: `city` → `varWarnStadt`
-4. Speichern Sie das Ergebnis in: `varWarnungen`
+1. Fügen Sie einen **Generative Antworten**-Knoten hinzu:
+   - Klicken Sie auf **+** → **Erweitert** → **Generative Antworten**
+2. Konfigurieren Sie die **Eingabe** (Input):
 
-### 7.4 Adaptive Card für die Wetterwarnung erstellen
+   ```
+   Prüfe die Wetterwarnungen für {Topic.varWarnStadt}. 
+   Gib alle Warnungen übersichtlich aus und erkläre 
+   kurz, was sie bedeuten.
+   ```
 
-1. Fügen Sie einen **Nachricht-Knoten** hinzu
-2. Klicken Sie auf **+ Hinzufügen** → **Adaptive Card**
-3. Wechseln Sie in den **JSON-Editor** und fügen Sie folgendes JSON ein:
+> **Hinweis:** Der Agent erkennt automatisch, dass das Tool `get_weather_alert` aufgerufen werden muss. Die Antwort wird direkt an den Benutzer ausgegeben.
+
+### 7.4 Adaptive Card für die Begrüßung des Topics erstellen
+
+> **Lernziel:** In diesem Abschnitt lernen Sie, wie Adaptive Cards in Copilot Studio verwendet werden. Die Karte dient hier als visuelle Einleitung für das Wetterwarnungs-Topic.
+
+1. Verschieben Sie den „Generative Antworten"-Knoten nach unten (mit Drag & Drop)
+2. Fügen Sie **vor** dem „Generative Antworten"-Knoten einen **Nachricht-Knoten** hinzu
+3. Klicken Sie auf **+ Hinzufügen** → **Adaptive Card**
+4. Wechseln Sie in den **JSON-Editor** und fügen Sie folgendes JSON ein:
 
 ```json
 {
@@ -381,14 +387,14 @@ In dieser Aufgabe erstellen Sie ein Topic, das Wetterwarnungen abfragt und das E
     },
     {
       "type": "TextBlock",
-      "text": "Stadt: {varWarnStadt}",
+      "text": "Stadt: {Topic.varWarnStadt}",
       "weight": "Bolder",
       "spacing": "Medium",
       "wrap": true
     },
     {
       "type": "TextBlock",
-      "text": "{varWarnungen}",
+      "text": "Die Wetterwarnungen werden geladen...",
       "wrap": true,
       "spacing": "Medium"
     },
@@ -404,15 +410,15 @@ In dieser Aufgabe erstellen Sie ein Topic, das Wetterwarnungen abfragt und das E
 }
 ```
 
-> **Tipp:** Sie können die Adaptive Card vorab im [Adaptive Cards Designer](https://adaptivecards.io/designer/) testen und anpassen, bevor Sie sie in Copilot Studio einfügen.
+> **Tipp:** Sie können die Adaptive Card vorab im [Adaptive Cards Designer](https://adaptivecards.io/designer/) testen und anpassen, bevor Sie sie in Copilot Studio einfügen. Die Karte dient als visuelle Einleitung – die eigentlichen Wetterwarnungen werden anschließend vom „Generative Antworten"-Knoten ausgegeben.
 
 ### 7.5 Rückfrage hinzufügen
 
-1. Fügen Sie nach der Adaptive Card einen weiteren **Nachricht-Knoten** hinzu:
+1. Fügen Sie **nach** dem „Generative Antworten"-Knoten einen weiteren **Nachricht-Knoten** hinzu:
 
    ```
    Möchten Sie auch die aktuelle Temperatur oder eine 
-   Vorhersage für {varWarnStadt} sehen?
+   Vorhersage für {Topic.varWarnStadt} sehen?
    ```
 
 2. **Speichern** Sie das Topic
@@ -447,35 +453,24 @@ Erstellen Sie ein Topic, das das Wetter zweier Städte vergleicht – eine tolle
    - **Frage:** `Und welche zweite Stadt?`
    - **Variable:** `varStadt2`
 
-### 8.3 Wetter für beide Städte abrufen
+### 8.3 Wettervergleich per generative Antworten
 
-1. Fügen Sie einen **Aktion aufrufen**-Knoten hinzu:
-   - Aktion: **`get_current_weather`**
-   - `city` → `varStadt1`
-   - Ergebnis speichern in: `varWetter1`
+> **Hinweis:** Der Agent kann über die generative Orchestrierung **automatisch mehrere Tool-Aufrufe** hintereinander ausführen – Sie müssen das nicht manuell konfigurieren.
 
-2. Fügen Sie einen zweiten **Aktion aufrufen**-Knoten hinzu:
-   - Aktion: **`get_current_weather`**
-   - `city` → `varStadt2`
-   - Ergebnis speichern in: `varWetter2`
-
-### 8.4 Vergleich anzeigen
-
-1. Fügen Sie einen **Nachricht-Knoten** hinzu:
+1. Fügen Sie einen **Generative Antworten**-Knoten hinzu:
+   - Klicken Sie auf **+** → **Erweitert** → **Generative Antworten**
+2. Konfigurieren Sie die **Eingabe** (Input):
 
    ```
-   🌍 Wettervergleich:
-   
-   📍 {varStadt1}:
-   {varWetter1}
-   
-   📍 {varStadt2}:
-   {varWetter2}
-   
-   Möchten Sie eine detailliertere Vorhersage für eine der Städte?
+   Vergleiche das aktuelle Wetter in {Topic.varStadt1} und 
+   {Topic.varStadt2}. Zeige für beide Städte Temperatur, 
+   Wetterlage und Wind an und fasse zusammen, wo es 
+   wärmer/kälter ist.
    ```
 
-2. **Speichern** Sie das Topic
+3. **Speichern** Sie das Topic
+
+> **Was passiert hier?** Die KI-Engine erkennt, dass sie `get_current_weather` **zweimal** aufrufen muss (einmal pro Stadt) und erstellt automatisch einen übersichtlichen Vergleich.
 
 > **Ergebnis:** Sie haben ein Topic erstellt, das Live-Wetterdaten zweier Städte vergleicht.
 
@@ -686,7 +681,7 @@ Erstellen Sie ein kreatives Topic „Reisewetter-Berater", das:
 | Problem | Lösung |
 |---|---|
 | MCP Server nicht erreichbar | Fragen Sie den Trainer – der Server muss laufen |
-| „Verbindung fehlgeschlagen" bei MCP-Aktion | Prüfen Sie die URL (muss auf `/sse` enden) |
+| „Verbindung fehlgeschlagen“ bei MCP-Aktion | Prüfen Sie die URL (muss auf `/mcp` enden) |
 | Tools werden nicht erkannt | Trennen und erneut verbinden. URL prüfen |
 | Agent antwortet nicht mit Wetterdaten | Prüfen Sie, ob die MCP-Aktion aktiviert und gespeichert ist |
 | Adaptive Card wird nicht angezeigt | Prüfen Sie das JSON auf Syntaxfehler (z. B. fehlende Kommas) |
